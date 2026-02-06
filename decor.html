@@ -63,28 +63,37 @@
     <button class="btn" onclick="send()">Book Decor / ይዘዙ</button>
 
 
-    <script>
+   <script>
     const tg = window.Telegram.WebApp;
-    tg.expand(); // Forces the app to open full screen
+    tg.expand();
 
     function send() {
-        const data = { type: 'POSTPARTUM' }; // or 'DECOR' for the other form
-        
-        // Loop through all inputs
-        document.querySelectorAll('input, select, textarea').forEach(el => {
-            if(el.id) data[el.id] = el.value;
-        });
+        try {
+            const data = { 
+                type: 'POSTPARTUM', // Change to 'DECOR' for your other page
+                p_name: document.getElementById('p_name')?.value || "No Name",
+                p_phone: document.getElementById('p_phone')?.value || "No Phone"
+                // Add your other fields here...
+            };
 
-        // IMPORTANT: Check if the app is actually running inside Telegram
-        if (window.Telegram.WebApp.initData === "") {
-            alert("This form only works when opened inside the Telegram Bot!");
-            return;
+            const stringData = JSON.stringify(data);
+
+            // DEBUG ALERT: This will show you the data before it tries to send
+            // If you don't see this alert on your phone, the button isn't calling this function!
+            alert("Sending data: " + stringData);
+
+            if (tg.sendData) {
+                tg.sendData(stringData);
+                tg.close();
+            } else {
+                alert("Telegram sendData not found. Are you testing in a browser? Use the Bot!");
+            }
+        } catch (e) {
+            alert("JS Error: " + e.message);
         }
-
-        tg.sendData(JSON.stringify(data)); 
-        tg.close(); // Closes the mini-app after sending
     }
 </script>
 </body>
 
 </html>
+
