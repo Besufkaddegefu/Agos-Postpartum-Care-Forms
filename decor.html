@@ -62,16 +62,29 @@
 
     <button class="btn" onclick="send()">Book Decor / ይዘዙ</button>
 
+
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        function send() {
-            const data = { type: 'DECOR' };
-            document.querySelectorAll('input, select, textarea').forEach(el => {
-                if(el.id) data[el.id] = el.value;
-            });
-            tg.sendData(JSON.stringify(data));
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // Forces the app to open full screen
+
+    function send() {
+        const data = { type: 'POSTPARTUM' }; // or 'DECOR' for the other form
+        
+        // Loop through all inputs
+        document.querySelectorAll('input, select, textarea').forEach(el => {
+            if(el.id) data[el.id] = el.value;
+        });
+
+        // IMPORTANT: Check if the app is actually running inside Telegram
+        if (window.Telegram.WebApp.initData === "") {
+            alert("This form only works when opened inside the Telegram Bot!");
+            return;
         }
-    </script>
+
+        tg.sendData(JSON.stringify(data)); 
+        tg.close(); // Closes the mini-app after sending
+    }
+</script>
 </body>
+
 </html>
