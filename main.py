@@ -1,7 +1,9 @@
 import os
 import asyncio
 import logging
+import nest_asyncio  # Add this line
 from io import BytesIO
+# ... rest of your imports
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
@@ -9,6 +11,8 @@ from telegram import (InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyK
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
                           MessageHandler, filters, ContextTypes, ConversationHandler)
 from flask import Flask, request, Response
+
+nest_asyncio.apply()  # Allow nested event loops
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -890,12 +894,19 @@ app.add_handler(CallbackQueryHandler(info_pages, pattern='^info_'))
 app.add_handler(CallbackQueryHandler(start, pattern='^restart$'))
 
 # --- FLASK WEBHOOK SERVER ---
+# --- FLASK WEBHOOK SERVER (PRODUCTION READY) ---
+import nest_asyncio
+nest_asyncio.apply()  # Allow nested event loops
+
 flask_app = Flask(__name__)
 
 @flask_app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    """Telegram webhook endpoint"""
+    """Telegram webhook endpoint - Production version"""
     if request.method == "POST":
+        request_id = hash(request.data) % 10000  # Simple request tracking
+        logger.info(f"[{request_id}] 🔵 Webhook received")
+        
         # Create new event loop for this request
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -903,38 +914,77 @@ def webhook():
         try:
             # Parse update
             update_data = request.get_json(force=True)
-            update = Update.de_json(update_data, app.bot)
+            logger.info(f"[{request_id}] 📦 Update ID: {update_data.get('update_id')}")
             
             # Initialize app once (first request only)
             if not hasattr(flask_app, '_bot_initialized'):
-                logger.info("🚀 Initializing bot application...")
+                logger.info(f"[{request_id}] 🚀 Initializing bot application...")
                 loop.run_until_complete(app.initialize())
                 loop.run_until_complete(app.start())
                 flask_app._bot_initialized = True
-                logger.info("✅ Bot initialized successfully")
+                flask_app._bot_init_time = asyncio.get_event_loop().time()
+                logger.info(f"[{request_id}] ✅ Bot initialized successfully")
             
             # Process the update
+            update = Update.de_json(update_data, app.bot)
             loop.run_until_complete(app.process_update(update))
+            logger.info(f"[{request_id}] ✅ Update processed successfully")
             return Response("ok", status=200)
             
         except Exception as e:
-            logger.error(f"❌ Webhook error: {e}", exc_info=True)
+            logger.error(f"[{request_id}] ❌ Webhook error: {str(e)}", exc_info=True)
             return Response(f"error: {str(e)}", status=500)
         finally:
             loop.close()
+            logger.info(f"[{request_id}] 🔴 Loop closed")
     
     return Response("method not allowed", status=405)
 
 @flask_app.route("/")
 def home():
-    return "Agos Postpartum Care Bot is running (webhook mode)."
+    """Home endpoint - health check"""
+    status = {
+        "status": "running",
+        "bot_token_configured": bool(TOKEN),
+        "admin_id_configured": ADMIN_ID != 123456789,
+        "bot_initialized": hasattr(flask_app, '_bot_initialized'),
+        "message": "Agos Postpartum Care Bot is running"
+    }
+    if hasattr(flask_app, '_bot_init_time'):
+        status["uptime"] = asyncio.get_event_loop().time() - flask_app._bot_init_time
+    
+    return jsonify(status)
 
 @flask_app.route("/health")
 def health():
+    """Kubernetes health check endpoint"""
     return Response("OK", status=200)
 
+@flask_app.route("/debug")
+def debug():
+    """Debug endpoint to check configuration"""
+    return jsonify({
+        "bot_token_set": bool(TOKEN),
+        "admin_id": ADMIN_ID,
+        "logo_path": LOGO_PATH,
+        "logo_exists": os.path.exists(LOGO_PATH),
+        "bot_initialized": hasattr(flask_app, '_bot_initialized'),
+        "python_telegram_bot_version": "20.7",
+        "flask_version": "3.0.0"
+    })
+
+# This is ONLY for local testing - In production, Choreo uses gunicorn
 if __name__ == "__main__":
-    # For local testing only
+    import sys
     port = int(os.environ.get("PORT", 8080))
-    logger.info(f"Starting Flask server on port {port}")
-    flask_app.run(host="0.0.0.0", port=port, debug=False)
+    logger.info(f"🚀 Starting Flask development server on port {port}")
+    logger.warning("⚠️  This is a DEVELOPMENT server - DO NOT USE IN PRODUCTION!")
+    logger.warning("✅ In production, Choreo will use gunicorn automatically")
+    
+    # Only run in development mode
+    if os.environ.get('RUN_AS_DEV_SERVER'):
+        flask_app.run(host="0.0.0.0", port=port, debug=False)
+    else:
+        logger.info("🟢 This module is meant to be imported by gunicorn")
+        logger.info("📝 To run locally with gunicorn: gunicorn --bind 0.0.0.0:8080 main:flask_app")
+
